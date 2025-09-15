@@ -2,13 +2,14 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { NextAuthOptions } from "next-auth";
 import mongoose from "mongoose";
 import User from "@/app/model/UserModel";
-import bcrypt from 'bcrypt'
-
-const dbconnect = async ()=>{
-   await mongoose.connect(process.env.MONGODB_URL ?? "");
-}
+import bcrypt from "bcrypt";
 
 
+const dbconnect = async () => {
+  if (mongoose.connection.readyState === 0) {
+    await mongoose.connect(process.env.MONGODB_URL ?? "");
+  }
+};
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -16,38 +17,70 @@ export const authOptions: NextAuthOptions = {
       id: "credentials",
       name: "Credentials",
       credentials: {
-        Email: { label: "Email", type: "text" },
-        password: { label: "Password", type: "****" },
+        email: { label: "Email", type: "text" },
+        password: { label: "Password", type: "password" },
       },
-      async authorize(credential:any,req):Promise<any>{
+      async authorize(credentials): Promise<any> {
         await dbconnect();
-        try {
-            const user = await User.findOne({
-                $or:[
-                    {email:credential.identifier},
-                    {username:credential.identifier}
-                ]
-            })
-            if(!user){
-                throw new Error('No user found with this Email')
-            }
-            const isPasswordCorrect = await bcrypt.compare(credential.password,user.password);
-            if(isPasswordCorrect){
-                return user
-            }else{
-                throw new Error('Incorrect password')
-            }
-        } catch (error) {
-            return error;
+
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("Email and password are required");
         }
-      }
+
+        const user = await User.findOne({
+          $or: [{ email: credentials.email }, { username: credentials.email }],
+        });
+
+        if (!user) {
+          throw new Error("No user found with this Email or Username");
+        }
+
+        if (!user.isVerified) {
+          throw new Error("Please verify your account first");
+        }
+
+        const isPasswordCorrect = await bcrypt.compare(
+          credentials.password,
+          user.password
+        );
+
+        if (!isPasswordCorrect) {
+          throw new Error("Incorrect password");
+        }
+
+        return {
+          _id: user._id?.toString(),
+          email: user.email,
+          username: user.username,
+          isVerified: user.isVerified,
+          isAcceptingMessages: user.isAcceptingMessages,
+        };
+      },
     }),
   ],
-  pages:{
-    signIn:'/sign-in'
+  callbacks: {
+    async jwt({ token, user }: any) {
+      if (user) {
+        token._id = user._id;
+        token.isVerified = user.isVerified;
+        token.isAcceptingMessages = user.isAcceptingMessages;
+      }
+      return token;
+    },
+    async session({ session, token }: any) {
+      if (token && session.user) {
+        session.user._id = token._id;
+        session.user.isVerified = token.isVerified;
+        session.user.isAcceptingMessages = token.isAcceptingMessages;
+      }
+      return session;
+    },
   },
-  session:{
-    strategy:'jwt'
+  pages: {
+    signIn: "/sign-in",
   },
-  secret:process.env.NEXTAUTH_SECRET
+  session: {
+    strategy: "jwt",
+  },
+  secret: process.env.NEXTAUTH_SECRET,
 };

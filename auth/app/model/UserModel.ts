@@ -1,8 +1,23 @@
-import mongoose from "mongoose";
+import mongoose, { Schema, Document, Model } from "mongoose";
 
-const userSchema = new mongoose.Schema(
+export interface IUser extends Document {
+  username: string;
+  email: string;
+  password: string;
+  isVerified: boolean;
+  isAcceptingMessages: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const userSchema: Schema<IUser> = new mongoose.Schema(
   {
-    name: { type: String, required: [true, "Name is required"], trim: true },
+    username: {
+      type: String,
+      required: [true, "Username is required"],
+      trim: true,
+      unique: true,
+    },
     email: {
       type: String,
       required: [true, "Email is required"],
@@ -15,10 +30,20 @@ const userSchema = new mongoose.Schema(
       required: [true, "Password is required"],
       minlength: [6, "Password must be at least 6 characters"],
     },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    isAcceptingMessages: {
+      type: Boolean,
+      default: true,
+    },
   },
   { timestamps: true }
 );
 
-const User = mongoose.model("User", userSchema);
+// Prevent model overwrite in development (hot reload fix)
+const User: Model<IUser> =
+  mongoose.models.User || mongoose.model<IUser>("User", userSchema);
 
 export default User;
